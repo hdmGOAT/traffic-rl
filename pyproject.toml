@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "traffic-rl"
+version = "0.1.0"
+description = "Scaffold for reinforcement learning-based traffic signal control"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26",
+  "PyYAML>=6.0",
+  "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+
+[project.scripts]
+traffic-rl-train = "traffic_rl.cli.train:main"
+traffic-rl-eval = "traffic_rl.cli.evaluate:main"
+traffic-rl-compare = "traffic_rl.cli.compare:main"
+traffic-rl-compare-splits = "traffic_rl.cli.compare_splits:main"
+traffic-rl-pems-build = "traffic_rl.cli.pems_build:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

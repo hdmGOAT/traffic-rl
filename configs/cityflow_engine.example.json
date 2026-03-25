@@ -1,0 +1,11 @@
+{
+  "interval": 1.0,
+  "seed": 0,
+  "dir": "/home/hd/projects/traffic-rl/cityflow_data/",
+  "roadnetFile": "roadnet.json",
+  "flowFile": "flow.json",
+  "rlTrafficLight": true,
+  "saveReplay": true,
+  "roadnetLogFile": "replay/roadnet_log.json",
+  "replayLogFile": "replay/replay_log.txt"
+}

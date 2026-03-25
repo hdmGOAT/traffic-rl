@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.venv310/
+venv/
+build/
+dist/
+*.egg-info/
+outputs/
+cityflow_data/replay/
+
+# Local cloned dependencies/data
+CityFlow/
+Pems_Dataset/
+
+# Common local/editor artifacts
+.DS_Store
+.idea/
+.vscode/
+
+# Crash dumps
+core
+core.*

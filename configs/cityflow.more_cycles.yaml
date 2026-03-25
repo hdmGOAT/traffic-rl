@@ -1,0 +1,32 @@
+seed: 7
+output_dir: outputs
+
+env:
+  backend: cityflow
+  intersection_id: intersection_1_1
+  num_lanes: 16
+  num_phases: 8
+  min_green_time: 5
+  decision_interval: 5
+  episode_horizon_seconds: 1200
+  cityflow_config_path: ./cityflow_engine.example.json
+  cityflow_thread_num: 1
+
+reward:
+  type: queue_length
+
+training:
+  episodes: 20
+  max_steps: 120
+  agent_type: dqn
+  gamma: 0.95
+  learning_rate: 0.001
+  epsilon_start: 1.0
+  epsilon_end: 0.05
+  epsilon_decay: 0.995
+  hidden_dim: 64
+  batch_size: 32
+  replay_capacity: 5000
+  learning_starts: 100
+  target_update_interval: 100
+  train_frequency: 1
