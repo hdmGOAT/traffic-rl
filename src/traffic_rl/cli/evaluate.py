@@ -3,7 +3,12 @@ from __future__ import annotations
 import argparse
 
 from traffic_rl.config import load_config
-from traffic_rl.evaluation import run_evaluation
+from traffic_rl.evaluation import (
+    generate_chart_from_replay,
+    resolve_cityflow_file_path,
+    resolve_replay_file_path,
+    run_evaluation,
+)
 
 
 def main() -> None:
@@ -25,6 +30,19 @@ def main() -> None:
         action="store_true",
         help="Disable checkpoint loading and evaluate a fresh (untrained) agent.",
     )
+    parser.add_argument(
+        "--chart-file",
+        default=None,
+        help=(
+            "Optional chart output file path. Relative paths are resolved under "
+            "CityFlow engine config 'dir'."
+        ),
+    )
+    parser.add_argument(
+        "--chart-title",
+        default="Vehicle count",
+        help="Chart title (first line in chart file).",
+    )
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -35,6 +53,15 @@ def main() -> None:
         replay_file=args.replay_file,
         load_checkpoint=not args.no_checkpoint,
     )
+
+    if args.chart_file is not None:
+        replay_path = resolve_replay_file_path(cfg, args.replay_file)
+        if replay_path is None:
+            raise ValueError("Cannot resolve replay file path for chart generation.")
+
+        chart_path = resolve_cityflow_file_path(cfg, args.chart_file)
+        generated = generate_chart_from_replay(replay_path, chart_path, title=args.chart_title)
+        print(f"Chart file: {generated}")
 
     print("Evaluation complete")
     print(f"Episodes: {summary.episodes}")

@@ -25,6 +25,7 @@ traffic-rl-eval = "traffic_rl.cli.evaluate:main"
 traffic-rl-compare = "traffic_rl.cli.compare:main"
 traffic-rl-compare-splits = "traffic_rl.cli.compare_splits:main"
 traffic-rl-pems-build = "traffic_rl.cli.pems_build:main"
+traffic-rl-visualize = "traffic_rl.cli.visualize:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
