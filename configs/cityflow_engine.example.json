@@ -1,7 +1,7 @@
 {
   "interval": 1.0,
   "seed": 0,
-  "dir": "/home/hd/projects/traffic-rl/cityflow_data/",
+  "dir": "/Users/raldhelbiro/Documents/Projects/Python/traffic-rl/cityflow_data/",
   "roadnetFile": "roadnet.json",
   "flowFile": "flow.json",
   "rlTrafficLight": true,

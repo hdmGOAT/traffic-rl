@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +19,33 @@ class EvaluationSummary:
     average_queue: float
     average_throughput: float
     episode_rewards: list[float]
+
+
+def generate_chart_from_replay(
+    replay_path: str | Path,
+    chart_path: str | Path,
+    title: str = "Vehicle count",
+) -> Path:
+    replay = Path(replay_path)
+    if not replay.exists():
+        raise FileNotFoundError(f"Replay file was not found: {replay}")
+
+    chart = Path(chart_path)
+    chart.parent.mkdir(parents=True, exist_ok=True)
+
+    lines = replay.read_text(encoding="utf-8").splitlines()
+    counts: list[str] = []
+    for index, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        if ";" not in line:
+            raise ValueError(f"Invalid replay format at line {index}: missing ';' separator.")
+        car_logs, _ = line.split(";", maxsplit=1)
+        vehicles = [entry for entry in car_logs.split(",") if entry.strip()]
+        counts.append(str(len(vehicles)))
+
+    chart.write_text("\n".join([title, *counts]) + "\n", encoding="utf-8")
+    return chart
 
 
 def run_evaluation(
@@ -83,3 +111,32 @@ def _resolve_checkpoint(cfg: AppConfig, checkpoint_path: str | None) -> str | No
     if not path.is_absolute():
         path = Path.cwd() / path
     return str(path.resolve())
+
+
+def resolve_cityflow_file_path(cfg: AppConfig, file_path: str) -> Path:
+    path = Path(file_path)
+    if path.is_absolute():
+        return path.resolve()
+
+    if not cfg.env.cityflow_config_path:
+        return (Path.cwd() / path).resolve()
+
+    engine_path = Path(cfg.env.cityflow_config_path)
+    engine_cfg = json.loads(engine_path.read_text(encoding="utf-8"))
+    engine_dir = Path(str(engine_cfg.get("dir", "."))).resolve()
+    return (engine_dir / path).resolve()
+
+
+def resolve_replay_file_path(cfg: AppConfig, replay_file: str | None) -> Path | None:
+    if replay_file:
+        return resolve_cityflow_file_path(cfg, replay_file)
+
+    if not cfg.env.cityflow_config_path:
+        return None
+
+    engine_path = Path(cfg.env.cityflow_config_path)
+    engine_cfg = json.loads(engine_path.read_text(encoding="utf-8"))
+    replay_log = engine_cfg.get("replayLogFile")
+    if not isinstance(replay_log, str) or not replay_log:
+        return None
+    return resolve_cityflow_file_path(cfg, replay_log)
