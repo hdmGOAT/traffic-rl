@@ -6,6 +6,8 @@ Reinforcement-learning traffic signal control in CityFlow, with PEMS-04 demand c
 
 - DQN training/evaluation (`mock` and `cityflow` backends)
 - Checkpointed policy comparison (trained vs untrained)
+- Evaluation replay chart generation (`--chart-file`, `--chart-title`)
+- HTML/JSON evidence report proving RL effectiveness (`traffic_rl.cli.visualize`)
 - PEMS-04 (`PEMS04.npz`) → CityFlow `flow_train/val/test.json`
 - Statistical significance reports across temporal splits
 
@@ -38,7 +40,12 @@ uv pip install --python /home/hd/projects/traffic-rl/.venv310/bin/python .
 ```bash
 cd /home/hd/projects/traffic-rl
 /home/hd/projects/traffic-rl/.venv310/bin/python -m traffic_rl.cli.train --config configs/cityflow.quick.yaml
-/home/hd/projects/traffic-rl/.venv310/bin/python -m traffic_rl.cli.evaluate --config configs/cityflow.quick.yaml --episodes 3
+/home/hd/projects/traffic-rl/.venv310/bin/python -m traffic_rl.cli.evaluate \
+  --config configs/cityflow.quick.yaml \
+  --episodes 3 \
+  --replay-file replay/quick_eval.txt \
+  --chart-file replay/quick_eval_chart.txt \
+  --chart-title "Vehicle count"
 ```
 
 ## Train / Evaluate (Main Protocol)
@@ -54,15 +61,50 @@ cd /home/hd/projects/traffic-rl
   --config configs/cityflow.more_cycles.yaml \
   --episodes 10 \
   --checkpoint outputs/agent_checkpoint_cityflow.npz \
-  --replay-file replay/eval_trained.txt
+  --replay-file replay/eval_trained.txt \
+  --chart-file replay/eval_trained_chart.txt \
+  --chart-title "Vehicle count"
 
 # Evaluate untrained baseline
 /home/hd/projects/traffic-rl/.venv310/bin/python -m traffic_rl.cli.evaluate \
   --config configs/cityflow.more_cycles.yaml \
   --episodes 10 \
   --no-checkpoint \
-  --replay-file replay/eval_untrained.txt
+  --replay-file replay/eval_untrained.txt \
+  --chart-file replay/eval_untrained_chart.txt \
+  --chart-title "Vehicle count"
 ```
+
+Training now prints a per-episode terminal line with:
+
+- episode reward
+- running average reward
+- an ASCII trend bar (higher/less-negative reward fills more `#`)
+
+## RL Working Visualization Report
+
+Generate a standalone HTML + JSON report that compares trained vs untrained policy performance, including:
+
+- mean reward difference
+- confidence interval / p-value / effect size
+- mean queue and mean throughput comparison
+- episode reward traces (inline chart)
+
+```bash
+cd /home/hd/projects/traffic-rl
+/home/hd/projects/traffic-rl/.venv310/bin/python -m traffic_rl.cli.visualize \
+  --config configs/cityflow.more_cycles.yaml \
+  --episodes 10 \
+  --seeds 5 \
+  --checkpoint outputs/agent_checkpoint_cityflow.npz \
+  --html-file outputs/rl_working_cityflow_strong.html \
+  --json-file outputs/rl_working_cityflow_strong.json
+```
+
+Outputs:
+
+- `outputs/rl_working_cityflow_strong.html`
+- `outputs/rl_working_cityflow_strong.json`
 
 ## PEMS-04 Demand Conversion
 
@@ -128,6 +170,7 @@ Open `http://localhost:8080/index.html` and load:
 
 - roadnet log: `cityflow_data/replay/roadnet_log.json`
 - replay log: one of `cityflow_data/replay/*.txt`
+- chart file (optional): one of `cityflow_data/replay/*_chart.txt`
 
 ## Findings
 
@@ -140,3 +183,6 @@ Latest recorded findings are in:
 - If progress looks stalled at `0/3` in split comparison, watch the per-episode bars (`train seed=... trained/untrained`) — each split can take minutes.
 - If CityFlow cannot find roads from generated flows, regenerate demands with `configs/pems04_to_cityflow.example.yaml` and ensure route IDs match `cityflow_data/roadnet.json`.
 - If `pip` is unavailable in `.venv310`, use `uv pip --python /home/hd/projects/traffic-rl/.venv310/bin/python ...`.
+- If replay logs fail with `write roadnet log file error`, create `cityflow_data/replay/` first.
+- If newly added CLI flags are missing (for example `--chart-file` or `traffic_rl.cli.visualize`), reinstall editable package:
+  `/home/hd/projects/traffic-rl/.venv310/bin/python -m pip install -e .`

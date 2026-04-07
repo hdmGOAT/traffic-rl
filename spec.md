@@ -143,3 +143,21 @@ Baselines may include:
 * Results do not imply direct real-world deployability
 
 This implementation focuses on **algorithmic feasibility and learning effectiveness**, serving as a foundation for future integration with real-world traffic data.
+
+---
+
+## Implementation Notes (Current Repo)
+
+The current implementation includes command-line tooling to make RL behavior observable and reproducible:
+
+- `traffic_rl.cli.train` prints per-episode terminal progress with reward, running average, and a small ASCII trend bar.
+- `traffic_rl.cli.evaluate` can now emit CityFlow chart files from replay logs via:
+  - `--chart-file`
+  - `--chart-title`
+- `traffic_rl.cli.visualize` builds an evidence report (`.html` + `.json`) that compares trained vs untrained policies with:
+  - mean reward difference
+  - confidence interval, p-value, and Cohen's d
+  - queue and throughput summary metrics
+  - episode reward traces
+
+These additions are reporting/observability features and do not change the underlying RL objective (queue-length minimization).

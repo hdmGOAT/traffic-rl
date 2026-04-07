@@ -24,7 +24,8 @@ def run_training(cfg: AppConfig) -> TrainingSummary:
     agent = build_agent(cfg, env.action_size)
 
     rewards: list[float] = []
-    for _ in tqdm(range(cfg.training.episodes), desc="Training episodes", unit="ep"):
+    progress = tqdm(range(cfg.training.episodes), desc="Training episodes", unit="ep")
+    for episode_idx in progress:
         obs = env.reset()
         state = obs.as_vector()
         episode_reward = 0.0
@@ -42,6 +43,17 @@ def run_training(cfg: AppConfig) -> TrainingSummary:
                 break
 
         rewards.append(float(episode_reward))
+        running_avg = float(np.mean(rewards))
+        progress.set_postfix(
+            reward=f"{episode_reward:.1f}",
+            avg=f"{running_avg:.1f}",
+            trend=_reward_bar(episode_reward),
+        )
+        print(
+            f"[train] ep {episode_idx + 1:03d}/{cfg.training.episodes:03d} "
+            f"reward={episode_reward:8.1f} avg={running_avg:8.1f} "
+            f"{_reward_bar(episode_reward)}"
+        )
 
     summary = TrainingSummary(
         episodes=cfg.training.episodes,
@@ -67,3 +79,11 @@ def _save_agent_checkpoint(cfg: AppConfig, agent: object) -> None:
 
     if hasattr(agent, "save"):
         agent.save(checkpoint_path)
+
+
+def _reward_bar(reward: float, width: int = 16) -> str:
+    # Less-negative reward means better traffic control.
+    clamped = float(np.clip(reward, -12000.0, 0.0))
+    filled = int(round((clamped + 12000.0) / 12000.0 * width))
+    filled = max(0, min(width, filled))
+    return f"[{'#' * filled}{'-' * (width - filled)}]"
