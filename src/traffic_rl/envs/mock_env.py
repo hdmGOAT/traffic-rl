@@ -68,5 +68,6 @@ class MockTrafficEnv(TrafficEnv):
             "step": self._step,
             "throughput": float(departures.sum()),
             "avg_queue": float(self._queues.mean()),
+            "avg_travel_time": 0.0,
         }
         return obs, reward, done, info

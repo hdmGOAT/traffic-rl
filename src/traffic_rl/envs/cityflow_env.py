@@ -102,6 +102,7 @@ class CityFlowTrafficEnv(TrafficEnv):
             "step": self._step,
             "avg_queue": float(obs.queue_lengths.mean()),
             "throughput": float(len(self.handles.engine.get_vehicles(include_waiting=False))),
+            "avg_travel_time": float(self.handles.engine.get_average_travel_time()),
             "replay_enabled": bool(self._engine_cfg.get("saveReplay", False)),
         }
         return obs, reward, done, info

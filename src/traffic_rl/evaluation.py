@@ -18,6 +18,7 @@ class EvaluationSummary:
     average_reward: float
     average_queue: float
     average_throughput: float
+    average_travel_time: float
     episode_rewards: list[float]
 
 
@@ -71,6 +72,7 @@ def run_evaluation(
     rewards: list[float] = []
     avg_queues: list[float] = []
     throughputs: list[float] = []
+    travel_times: list[float] = []
 
     for _ in tqdm(range(episodes), desc=progress_desc, unit="ep", disable=not show_progress):
         obs = env.reset()
@@ -84,6 +86,7 @@ def run_evaluation(
             episode_reward += reward
             avg_queues.append(float(info.get("avg_queue", 0.0)))
             throughputs.append(float(info.get("throughput", 0.0)))
+            travel_times.append(float(info.get("avg_travel_time", 0.0)))
 
             if done:
                 break
@@ -95,6 +98,7 @@ def run_evaluation(
         average_reward=float(np.mean(rewards) if rewards else 0.0),
         average_queue=float(np.mean(avg_queues) if avg_queues else 0.0),
         average_throughput=float(np.mean(throughputs) if throughputs else 0.0),
+        average_travel_time=float(np.mean(travel_times) if travel_times else 0.0),
         episode_rewards=[float(value) for value in rewards],
     )
 

@@ -29,6 +29,8 @@ def _build_report_html(report: dict) -> str:
     untrained_queue = float(report.get("untrained_mean_queue", 0.0))
     trained_throughput = float(report.get("trained_mean_throughput", 0.0))
     untrained_throughput = float(report.get("untrained_mean_throughput", 0.0))
+    trained_travel_time = float(report.get("trained_mean_travel_time", 0.0))
+    untrained_travel_time = float(report.get("untrained_mean_travel_time", 0.0))
     significant = bool(report.get("is_significant_0_05", False))
 
     verdict = (
@@ -77,6 +79,8 @@ def _build_report_html(report: dict) -> str:
     <div class="card"><div class="k">Trained mean queue</div><div class="v">{trained_queue:.3f}</div></div>
     <div class="card"><div class="k">Untrained mean queue</div><div class="v">{untrained_queue:.3f}</div></div>
     <div class="card"><div class="k">Throughput (trained/untrained)</div><div class="v">{trained_throughput:.1f} / {untrained_throughput:.1f}</div></div>
+    <div class="card"><div class="k">Avg travel time trained</div><div class="v">{trained_travel_time:.1f}s</div></div>
+    <div class="card"><div class="k">Avg travel time untrained</div><div class="v">{untrained_travel_time:.1f}s</div></div>
   </div>
   <div class="verdict">{escape(verdict)}</div>
 

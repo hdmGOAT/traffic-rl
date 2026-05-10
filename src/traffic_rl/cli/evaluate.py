@@ -68,6 +68,7 @@ def main() -> None:
     print(f"Average reward: {summary.average_reward:.3f}")
     print(f"Average queue: {summary.average_queue:.3f}")
     print(f"Average throughput: {summary.average_throughput:.3f}")
+    print(f"Average travel time: {summary.average_travel_time:.3f}s")
 
 
 if __name__ == "__main__":
