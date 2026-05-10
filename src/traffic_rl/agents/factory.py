@@ -4,6 +4,7 @@ from traffic_rl.agents.base import RLAgent
 from traffic_rl.agents.dqn import DQNAgent
 from traffic_rl.agents.double_dqn import DoubleDQNAgent
 from traffic_rl.agents.dueling_dqn import DuelingDQNAgent
+from traffic_rl.agents.fixed_time import FixedTimeAgent
 from traffic_rl.agents.tabular_q import TabularQAgent
 from traffic_rl.config import AppConfig
 
@@ -72,4 +73,8 @@ def build_agent(cfg: AppConfig, action_size: int) -> RLAgent:
             epsilon_decay=cfg.training.epsilon_decay,
             seed=cfg.seed,
         )
+
+    if agent_type == "fixed_time":
+        return FixedTimeAgent(action_size=action_size)
+
     raise ValueError(f"Unsupported agent_type '{cfg.training.agent_type}'.")
