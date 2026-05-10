@@ -12,9 +12,15 @@ from traffic_rl.evaluation import (
 
 
 def main() -> None:
+    """Entry point for the 'evaluate' CLI command.
+
+    Runs a trained (or fresh) agent through evaluation episodes without any
+    training or exploration, then prints all key metrics to stdout.
+    Optionally generates a vehicle-count chart from a CityFlow replay log.
+    """
     parser = argparse.ArgumentParser(description="Evaluate RL traffic signal controller.")
-    parser.add_argument("--config", default="configs/default.yaml", help="Path to YAML config file")
-    parser.add_argument("--episodes", type=int, default=5, help="Number of eval episodes")
+    parser.add_argument("--config",   default="configs/default.yaml", help="Path to YAML config file")
+    parser.add_argument("--episodes", type=int, default=5,            help="Number of eval episodes")
     parser.add_argument(
         "--checkpoint",
         default=None,
@@ -33,10 +39,7 @@ def main() -> None:
     parser.add_argument(
         "--chart-file",
         default=None,
-        help=(
-            "Optional chart output file path. Relative paths are resolved under "
-            "CityFlow engine config 'dir'."
-        ),
+        help="Optional chart output file. Relative paths resolved under CityFlow engine 'dir'.",
     )
     parser.add_argument(
         "--chart-title",
@@ -45,7 +48,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    cfg = load_config(args.config)
+    cfg     = load_config(args.config)
     summary = run_evaluation(
         cfg,
         episodes=args.episodes,
@@ -54,21 +57,23 @@ def main() -> None:
         load_checkpoint=not args.no_checkpoint,
     )
 
+    # Optionally generate a vehicle-count chart from the replay log.
     if args.chart_file is not None:
         replay_path = resolve_replay_file_path(cfg, args.replay_file)
         if replay_path is None:
             raise ValueError("Cannot resolve replay file path for chart generation.")
 
         chart_path = resolve_cityflow_file_path(cfg, args.chart_file)
-        generated = generate_chart_from_replay(replay_path, chart_path, title=args.chart_title)
+        generated  = generate_chart_from_replay(replay_path, chart_path, title=args.chart_title)
         print(f"Chart file: {generated}")
 
     print("Evaluation complete")
-    print(f"Episodes: {summary.episodes}")
-    print(f"Average reward: {summary.average_reward:.3f}")
-    print(f"Average queue: {summary.average_queue:.3f}")
-    print(f"Average throughput: {summary.average_throughput:.3f}")
-    print(f"Average travel time: {summary.average_travel_time:.3f}s")
+    print(f"Episodes:             {summary.episodes}")
+    print(f"Average reward:       {summary.average_reward:.3f}")
+    print(f"Average queue:        {summary.average_queue:.3f}")
+    print(f"Average throughput:   {summary.average_throughput:.3f}")
+    # Travel time is the gold-standard real-world metric — lower is better.
+    print(f"Average travel time:  {summary.average_travel_time:.3f}s")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,14 @@
-"""Double DQN agent: reduces Q-value overestimation using separate networks for action selection and evaluation."""
+"""Double DQN agent.
+
+Standard DQN tends to overestimate Q-values because the same network both
+selects the best next action AND evaluates how good that action is.
+Double DQN fixes this by splitting the two roles:
+  - online network  → picks WHICH action looks best in the next state
+  - target network  → evaluates HOW GOOD that action actually is
+
+This decoupling reduces systematic overestimation and leads to more stable,
+accurate Q-value estimates.
+"""
 from __future__ import annotations
 
 from collections import deque
@@ -10,6 +20,7 @@ import numpy as np
 from traffic_rl.agents.base import RLAgent
 
 
+# Identical to the DQN _Transition — one step of experience.
 @dataclass(slots=True)
 class _Transition:
     state: np.ndarray
@@ -20,6 +31,8 @@ class _Transition:
 
 
 class _ReplayBuffer:
+    """Fixed-capacity circular buffer for experience replay (same as DQN)."""
+
     def __init__(self, capacity: int) -> None:
         self._buffer: deque[_Transition] = deque(maxlen=capacity)
 
@@ -35,6 +48,8 @@ class _ReplayBuffer:
 
 
 class _QNetwork:
+    """Two-layer ReLU network — identical architecture to DQN's _QNetwork."""
+
     def __init__(self, state_size: int, hidden_dim: int, action_size: int, rng: np.random.Generator) -> None:
         scale_1 = np.sqrt(2.0 / max(1, state_size))
         scale_2 = np.sqrt(2.0 / max(1, hidden_dim))
@@ -61,7 +76,7 @@ class _QNetwork:
 
 
 class DoubleDQNAgent(RLAgent):
-    """Double DQN: uses online network to select actions and target network to evaluate them, reducing overestimation."""
+    """Double DQN: decouples action selection and action evaluation to cut overestimation."""
 
     def __init__(
         self,
@@ -98,6 +113,7 @@ class DoubleDQNAgent(RLAgent):
         self.update_step = 0
 
     def _ensure_initialized(self, state_vector: np.ndarray) -> None:
+        """Lazily build both networks on first observation (state size unknown until then)."""
         if self.online_net is not None and self.target_net is not None:
             return
         state_size = int(state_vector.shape[0])
@@ -106,6 +122,7 @@ class DoubleDQNAgent(RLAgent):
         self.target_net.copy_from(self.online_net)
 
     def act(self, state_vector: np.ndarray, train: bool = True) -> int:
+        """Epsilon-greedy: explore randomly during training, exploit the network during evaluation."""
         self._ensure_initialized(state_vector)
 
         if train and self.rng.random() < self.epsilon:
@@ -123,6 +140,7 @@ class DoubleDQNAgent(RLAgent):
         next_state: np.ndarray,
         done: bool,
     ) -> None:
+        """Store experience, conditionally train, sync target network, decay epsilon."""
         self._ensure_initialized(state)
 
         transition = _Transition(
@@ -144,43 +162,55 @@ class DoubleDQNAgent(RLAgent):
         self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
 
     def _optimize(self) -> None:
+        """Double DQN update: online network selects actions, target network evaluates them.
+
+        Standard DQN:        target = r + gamma * max_a Q_target(s', a)
+        Double DQN:          best_a = argmax_a Q_online(s', a)          ← online selects
+                             target = r + gamma * Q_target(s', best_a)  ← target evaluates
+
+        The split prevents the same network from both choosing and scoring the action,
+        which is what causes the upward bias in vanilla DQN.
+        """
         if len(self.replay_buffer) < self.batch_size:
             return
 
         batch = self.replay_buffer.sample(self.batch_size, self.rng)
-        states = np.vstack([transition.state for transition in batch]).astype(np.float32)
-        actions = np.array([transition.action for transition in batch], dtype=np.int64)
-        rewards = np.array([transition.reward for transition in batch], dtype=np.float32)
-        next_states = np.vstack([transition.next_state for transition in batch]).astype(np.float32)
-        dones = np.array([transition.done for transition in batch], dtype=np.float32)
+        states      = np.vstack([t.state      for t in batch]).astype(np.float32)
+        actions     = np.array( [t.action     for t in batch], dtype=np.int64)
+        rewards     = np.array( [t.reward     for t in batch], dtype=np.float32)
+        next_states = np.vstack([t.next_state for t in batch]).astype(np.float32)
+        dones       = np.array( [t.done       for t in batch], dtype=np.float32)
 
         z1, a1, q_values = self.online_net.forward(states)
-        
-        # Double DQN: use online net to select actions, target net to evaluate
+
+        # Step 1: ask the online network which action looks best in each next state.
         online_next_q = self.online_net.predict(next_states)
         best_next_actions = np.argmax(online_next_q, axis=1)
-        
+
+        # Step 2: ask the target network how good those chosen actions actually are.
         target_next_q = self.target_net.predict(next_states)
         max_next_q = target_next_q[np.arange(self.batch_size), best_next_actions]
-        
+
         targets = rewards + (1.0 - dones) * self.gamma * max_next_q
 
         batch_indices = np.arange(self.batch_size)
         q_selected = q_values[batch_indices, actions]
 
-        error = (q_selected - targets).astype(np.float32)
+        error  = (q_selected - targets).astype(np.float32)
         grad_q = np.zeros_like(q_values, dtype=np.float32)
         grad_q[batch_indices, actions] = (2.0 / self.batch_size) * error
 
+        # Backprop through layer 2.
         grad_w2 = a1.T @ grad_q
         grad_b2 = np.sum(grad_q, axis=0)
 
+        # Backprop through ReLU and layer 1.
         grad_a1 = grad_q @ self.online_net.w2.T
         grad_z1 = grad_a1 * (z1 > 0.0)
-
         grad_w1 = states.T @ grad_z1
         grad_b1 = np.sum(grad_z1, axis=0)
 
+        # SGD weight update.
         self.online_net.w1 -= self.learning_rate * grad_w1
         self.online_net.b1 -= self.learning_rate * grad_b1
         self.online_net.w2 -= self.learning_rate * grad_w2
@@ -189,19 +219,14 @@ class DoubleDQNAgent(RLAgent):
     def save(self, path: str | Path) -> None:
         if self.online_net is None or self.target_net is None:
             return
-
         checkpoint = Path(path)
         checkpoint.parent.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(
             checkpoint,
-            online_w1=self.online_net.w1,
-            online_b1=self.online_net.b1,
-            online_w2=self.online_net.w2,
-            online_b2=self.online_net.b2,
-            target_w1=self.target_net.w1,
-            target_b1=self.target_net.b1,
-            target_w2=self.target_net.w2,
-            target_b2=self.target_net.b2,
+            online_w1=self.online_net.w1, online_b1=self.online_net.b1,
+            online_w2=self.online_net.w2, online_b2=self.online_net.b2,
+            target_w1=self.target_net.w1, target_b1=self.target_net.b1,
+            target_w2=self.target_net.w2, target_b2=self.target_net.b2,
             epsilon=np.array([self.epsilon], dtype=np.float32),
             update_step=np.array([self.update_step], dtype=np.int64),
         )
@@ -210,11 +235,9 @@ class DoubleDQNAgent(RLAgent):
         checkpoint = Path(path)
         if not checkpoint.exists():
             raise FileNotFoundError(f"Agent checkpoint not found: {checkpoint}")
-
         data = np.load(checkpoint)
         state_size = int(data["online_w1"].shape[0])
         self._ensure_initialized(np.zeros(state_size, dtype=np.float32))
-
         self.online_net.w1 = data["online_w1"].astype(np.float32)
         self.online_net.b1 = data["online_b1"].astype(np.float32)
         self.online_net.w2 = data["online_w2"].astype(np.float32)

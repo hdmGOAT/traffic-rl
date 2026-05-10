@@ -8,18 +8,25 @@ from traffic_rl.training import run_training
 
 
 def main() -> None:
+    """Entry point for the 'train' CLI command.
+
+    Loads config from YAML, runs the training loop, and prints a summary.
+    The agent checkpoint is saved automatically by run_training().
+    """
     parser = argparse.ArgumentParser(description="Train RL traffic signal controller.")
     parser.add_argument("--config", default="configs/default.yaml", help="Path to YAML config file")
     args = parser.parse_args()
 
-    cfg = load_config(args.config)
+    cfg     = load_config(args.config)
     summary = run_training(cfg)
+
+    # The checkpoint path mirrors what run_training() uses internally.
     checkpoint_path = Path(cfg.output_dir) / f"agent_checkpoint_{cfg.env.backend.lower()}.npz"
 
     print("Training complete")
-    print(f"Episodes: {summary.episodes}")
+    print(f"Episodes:       {summary.episodes}")
     print(f"Average reward: {summary.average_reward:.3f}")
-    print(f"Checkpoint: {checkpoint_path}")
+    print(f"Checkpoint:     {checkpoint_path}")
 
 
 if __name__ == "__main__":

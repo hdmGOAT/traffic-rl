@@ -10,6 +10,19 @@ from traffic_rl.config import AppConfig
 
 
 def build_agent(cfg: AppConfig, action_size: int) -> RLAgent:
+    """Instantiate the correct agent based on the config's agent_type setting.
+
+    Supported types:
+        'dqn'         — Deep Q-Network with replay buffer and target network.
+        'double_dqn'  — DQN variant that reduces Q-value overestimation.
+        'dueling_dqn' — DQN variant with split value/advantage network streams.
+        'tabular_q'   — Classic Q-learning with a lookup table (no neural network).
+        'q_learning'  — Alias for tabular_q.
+        'fixed_time'  — Stateless baseline that cycles phases on a fixed timer.
+
+    The fixed_time agent is special: it ignores all training hyperparameters
+    and only needs action_size to cycle phases correctly.
+    """
     agent_type = cfg.training.agent_type.lower()
 
     if agent_type == "dqn":
@@ -75,6 +88,8 @@ def build_agent(cfg: AppConfig, action_size: int) -> RLAgent:
         )
 
     if agent_type == "fixed_time":
+        # Cycle steps default = 6: at decision_interval=5s that's 30s per phase,
+        # matching a common real-world pre-timed controller setting.
         return FixedTimeAgent(action_size=action_size)
 
     raise ValueError(f"Unsupported agent_type '{cfg.training.agent_type}'.")

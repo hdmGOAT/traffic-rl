@@ -1,4 +1,18 @@
-"""Dueling DQN agent: separates value and advantage streams in the network architecture."""
+"""Dueling DQN agent.
+
+Dueling DQN uses a split network architecture:
+  - One stream estimates V(s): how good is this state in general?
+  - Another stream estimates A(s,a): how much better is action a compared to average?
+  - Combined: Q(s,a) = V(s) + A(s,a) - mean_a(A(s,a))
+
+Subtracting the mean advantage keeps the decomposition identifiable
+(prevents the network from finding degenerate V/A splits that cancel out).
+
+The main benefit: the value stream can learn which states are good/bad without
+needing to evaluate every action, which helps in states where action choice
+doesn't matter much (e.g. a clear intersection). This leads to better policy
+evaluation and faster convergence on many RL benchmarks.
+"""
 from __future__ import annotations
 
 from collections import deque
@@ -20,6 +34,8 @@ class _Transition:
 
 
 class _ReplayBuffer:
+    """Fixed-capacity circular buffer for experience replay."""
+
     def __init__(self, capacity: int) -> None:
         self._buffer: deque[_Transition] = deque(maxlen=capacity)
 
@@ -35,53 +51,73 @@ class _ReplayBuffer:
 
 
 class _DuelingQNetwork:
-    """Q-network with separate value and advantage streams."""
+    """Q-network with a shared trunk that splits into value and advantage streams.
+
+    Architecture:
+        input → shared hidden layer (ReLU)
+                    ↓               ↓
+            value stream        advantage stream
+            (hidden → 1)        (hidden → action_size)
+                    ↓               ↓
+                Q(s,a) = V(s) + A(s,a) - mean_a(A(s,:))
+    """
 
     def __init__(self, state_size: int, hidden_dim: int, action_size: int, rng: np.random.Generator) -> None:
         scale_1 = np.sqrt(2.0 / max(1, state_size))
         scale_2 = np.sqrt(2.0 / max(1, hidden_dim))
         scale_3 = np.sqrt(2.0 / max(1, hidden_dim))
-        
-        # Shared hidden layer
+
+        # Shared trunk: all actions pass through this layer first.
         self.w1 = rng.normal(0.0, scale_1, size=(state_size, hidden_dim)).astype(np.float32)
         self.b1 = np.zeros(hidden_dim, dtype=np.float32)
-        
-        # Value stream
+
+        # Value stream: single output — how good is this state regardless of action?
         self.w_value = rng.normal(0.0, scale_2, size=(hidden_dim, 1)).astype(np.float32)
         self.b_value = np.zeros(1, dtype=np.float32)
-        
-        # Advantage stream
+
+        # Advantage stream: one output per action — relative benefit of each action.
         self.w_adv = rng.normal(0.0, scale_3, size=(hidden_dim, action_size)).astype(np.float32)
         self.b_adv = np.zeros(action_size, dtype=np.float32)
 
-    def forward(self, states: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def forward(self, states: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Forward pass returning all intermediate values needed for backprop.
+
+        Returns:
+            z1:        Pre-ReLU shared hidden layer.
+            a1:        Post-ReLU shared hidden layer.
+            value:     State value estimates V(s), shape (batch, 1).
+            advantage: Action advantage estimates A(s,a), shape (batch, action_size).
+            q_values:  Combined Q-values Q(s,a), shape (batch, action_size).
+        """
         z1 = states @ self.w1 + self.b1
-        a1 = np.maximum(z1, 0.0)
-        
-        value = a1 @ self.w_value + self.b_value
-        advantage = a1 @ self.w_adv + self.b_adv
-        
-        # Combine: Q(s,a) = V(s) + A(s,a) - mean(A(s,:))
+        a1 = np.maximum(z1, 0.0)   # ReLU activation.
+
+        value     = a1 @ self.w_value + self.b_value   # (batch, 1)
+        advantage = a1 @ self.w_adv  + self.b_adv      # (batch, action_size)
+
+        # Combine streams: subtract mean advantage to make V and A identifiable.
         mean_adv = np.mean(advantage, axis=1, keepdims=True)
         q_values = value + (advantage - mean_adv)
-        
+
         return z1, a1, value, advantage, q_values
 
     def predict(self, states: np.ndarray) -> np.ndarray:
+        """Forward pass returning only Q-values (used where intermediates aren't needed)."""
         _, _, _, _, q_values = self.forward(states)
         return q_values
 
     def copy_from(self, other: "_DuelingQNetwork") -> None:
-        self.w1 = other.w1.copy()
-        self.b1 = other.b1.copy()
+        """Copy all weights from another network (used to sync target ← online)."""
+        self.w1      = other.w1.copy()
+        self.b1      = other.b1.copy()
         self.w_value = other.w_value.copy()
         self.b_value = other.b_value.copy()
-        self.w_adv = other.w_adv.copy()
-        self.b_adv = other.b_adv.copy()
+        self.w_adv   = other.w_adv.copy()
+        self.b_adv   = other.b_adv.copy()
 
 
 class DuelingDQNAgent(RLAgent):
-    """Dueling DQN: separates value and advantage streams for better learning."""
+    """Dueling DQN: split value/advantage streams for better state-value estimation."""
 
     def __init__(
         self,
@@ -113,6 +149,7 @@ class DuelingDQNAgent(RLAgent):
 
         self.rng = np.random.default_rng(seed)
         self.replay_buffer = _ReplayBuffer(replay_capacity)
+        # Lazily initialised on first observation (state size unknown at construction).
         self.online_net: _DuelingQNetwork | None = None
         self.target_net: _DuelingQNetwork | None = None
         self.update_step = 0
@@ -126,6 +163,7 @@ class DuelingDQNAgent(RLAgent):
         self.target_net.copy_from(self.online_net)
 
     def act(self, state_vector: np.ndarray, train: bool = True) -> int:
+        """Epsilon-greedy action selection using the dueling Q-network."""
         self._ensure_initialized(state_vector)
 
         if train and self.rng.random() < self.epsilon:
@@ -143,6 +181,7 @@ class DuelingDQNAgent(RLAgent):
         next_state: np.ndarray,
         done: bool,
     ) -> None:
+        """Store experience, conditionally optimise, sync target network, decay epsilon."""
         self._ensure_initialized(state)
 
         transition = _Transition(
@@ -164,77 +203,79 @@ class DuelingDQNAgent(RLAgent):
         self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
 
     def _optimize(self) -> None:
+        """Dueling DQN gradient update.
+
+        The loss is the same MSE as DQN, but backprop must flow through
+        the split architecture. The gradient of Q w.r.t. the value stream
+        is the sum over all actions; for the advantage stream it's the
+        per-action gradient minus the mean (mirror of the forward-pass formula).
+        """
         if len(self.replay_buffer) < self.batch_size:
             return
 
         batch = self.replay_buffer.sample(self.batch_size, self.rng)
-        states = np.vstack([transition.state for transition in batch]).astype(np.float32)
-        actions = np.array([transition.action for transition in batch], dtype=np.int64)
-        rewards = np.array([transition.reward for transition in batch], dtype=np.float32)
-        next_states = np.vstack([transition.next_state for transition in batch]).astype(np.float32)
-        dones = np.array([transition.done for transition in batch], dtype=np.float32)
+        states      = np.vstack([t.state      for t in batch]).astype(np.float32)
+        actions     = np.array( [t.action     for t in batch], dtype=np.int64)
+        rewards     = np.array( [t.reward     for t in batch], dtype=np.float32)
+        next_states = np.vstack([t.next_state for t in batch]).astype(np.float32)
+        dones       = np.array( [t.done       for t in batch], dtype=np.float32)
 
+        # Forward pass through online network — save intermediates for backprop.
         z1, a1, value, advantage, q_values = self.online_net.forward(states)
-        next_q_values = self.target_net.predict(next_states)
 
-        max_next_q = np.max(next_q_values, axis=1)
-        targets = rewards + (1.0 - dones) * self.gamma * max_next_q
+        # Use target network for stable next-state Q estimates.
+        next_q_values = self.target_net.predict(next_states)
+        max_next_q    = np.max(next_q_values, axis=1)
+        targets       = rewards + (1.0 - dones) * self.gamma * max_next_q
 
         batch_indices = np.arange(self.batch_size)
-        q_selected = q_values[batch_indices, actions]
+        q_selected    = q_values[batch_indices, actions]
 
-        error = (q_selected - targets).astype(np.float32)
+        error  = (q_selected - targets).astype(np.float32)
         grad_q = np.zeros_like(q_values, dtype=np.float32)
         grad_q[batch_indices, actions] = (2.0 / self.batch_size) * error
 
-        # Backprop through dueling architecture
-        # Q(s,a) = V(s) + A(s,a) - mean(A(s,:))
-        # grad_V = sum_a(grad_Q[:, a])
-        # grad_A[:, a] = grad_Q[:, a] - mean_a(grad_Q[:, a])
-        num_actions = self.action_size
-        grad_value_scalar = np.sum(grad_q, axis=1, keepdims=True)  # (batch_size, 1)
-        grad_adv = grad_q - np.mean(grad_q, axis=1, keepdims=True)  # (batch_size, num_actions)
+        # Backprop through the dueling combination: Q = V + A - mean(A)
+        # ∂Q/∂V  = sum over all actions of ∂Q/∂Q_i (since V is shared).
+        grad_value_scalar = np.sum(grad_q, axis=1, keepdims=True)  # (batch, 1)
+        # ∂Q/∂A_i = ∂Q/∂Q_i − mean_j(∂Q/∂Q_j)  (chain rule through A - mean(A)).
+        grad_adv = grad_q - np.mean(grad_q, axis=1, keepdims=True)  # (batch, action_size)
 
-        grad_w_value = a1.T @ grad_value_scalar  # (hidden_dim, 1)
-        grad_b_value = np.sum(grad_value_scalar, axis=0)  # (1,)
+        # Backprop through value stream weights.
+        grad_w_value = a1.T @ grad_value_scalar   # (hidden, 1)
+        grad_b_value = np.sum(grad_value_scalar, axis=0)
 
-        grad_w_adv = a1.T @ grad_adv  # (hidden_dim, num_actions)
-        grad_b_adv = np.sum(grad_adv, axis=0)  # (num_actions,)
+        # Backprop through advantage stream weights.
+        grad_w_adv = a1.T @ grad_adv              # (hidden, action_size)
+        grad_b_adv = np.sum(grad_adv, axis=0)
 
-        # Gradient w.r.t. hidden layer
+        # Backprop through shared hidden layer (gradients from both streams combine here).
         grad_a1 = (grad_value_scalar @ self.online_net.w_value.T) + (grad_adv @ self.online_net.w_adv.T)
-        grad_z1 = grad_a1 * (z1 > 0.0)
-
+        grad_z1 = grad_a1 * (z1 > 0.0)   # ReLU gradient gate.
         grad_w1 = states.T @ grad_z1
         grad_b1 = np.sum(grad_z1, axis=0)
 
-        self.online_net.w1 -= self.learning_rate * grad_w1
-        self.online_net.b1 -= self.learning_rate * grad_b1
+        # SGD update for all weight groups.
+        self.online_net.w1      -= self.learning_rate * grad_w1
+        self.online_net.b1      -= self.learning_rate * grad_b1
         self.online_net.w_value -= self.learning_rate * grad_w_value
         self.online_net.b_value -= self.learning_rate * grad_b_value
-        self.online_net.w_adv -= self.learning_rate * grad_w_adv
-        self.online_net.b_adv -= self.learning_rate * grad_b_adv
+        self.online_net.w_adv   -= self.learning_rate * grad_w_adv
+        self.online_net.b_adv   -= self.learning_rate * grad_b_adv
 
     def save(self, path: str | Path) -> None:
         if self.online_net is None or self.target_net is None:
             return
-
         checkpoint = Path(path)
         checkpoint.parent.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(
             checkpoint,
-            online_w1=self.online_net.w1,
-            online_b1=self.online_net.b1,
-            online_w_value=self.online_net.w_value,
-            online_b_value=self.online_net.b_value,
-            online_w_adv=self.online_net.w_adv,
-            online_b_adv=self.online_net.b_adv,
-            target_w1=self.target_net.w1,
-            target_b1=self.target_net.b1,
-            target_w_value=self.target_net.w_value,
-            target_b_value=self.target_net.b_value,
-            target_w_adv=self.target_net.w_adv,
-            target_b_adv=self.target_net.b_adv,
+            online_w1=self.online_net.w1,       online_b1=self.online_net.b1,
+            online_w_value=self.online_net.w_value, online_b_value=self.online_net.b_value,
+            online_w_adv=self.online_net.w_adv,  online_b_adv=self.online_net.b_adv,
+            target_w1=self.target_net.w1,        target_b1=self.target_net.b1,
+            target_w_value=self.target_net.w_value, target_b_value=self.target_net.b_value,
+            target_w_adv=self.target_net.w_adv,  target_b_adv=self.target_net.b_adv,
             epsilon=np.array([self.epsilon], dtype=np.float32),
             update_step=np.array([self.update_step], dtype=np.int64),
         )
@@ -243,22 +284,20 @@ class DuelingDQNAgent(RLAgent):
         checkpoint = Path(path)
         if not checkpoint.exists():
             raise FileNotFoundError(f"Agent checkpoint not found: {checkpoint}")
-
         data = np.load(checkpoint)
         state_size = int(data["online_w1"].shape[0])
         self._ensure_initialized(np.zeros(state_size, dtype=np.float32))
-
-        self.online_net.w1 = data["online_w1"].astype(np.float32)
-        self.online_net.b1 = data["online_b1"].astype(np.float32)
+        self.online_net.w1      = data["online_w1"].astype(np.float32)
+        self.online_net.b1      = data["online_b1"].astype(np.float32)
         self.online_net.w_value = data["online_w_value"].astype(np.float32)
         self.online_net.b_value = data["online_b_value"].astype(np.float32)
-        self.online_net.w_adv = data["online_w_adv"].astype(np.float32)
-        self.online_net.b_adv = data["online_b_adv"].astype(np.float32)
-        self.target_net.w1 = data["target_w1"].astype(np.float32)
-        self.target_net.b1 = data["target_b1"].astype(np.float32)
+        self.online_net.w_adv   = data["online_w_adv"].astype(np.float32)
+        self.online_net.b_adv   = data["online_b_adv"].astype(np.float32)
+        self.target_net.w1      = data["target_w1"].astype(np.float32)
+        self.target_net.b1      = data["target_b1"].astype(np.float32)
         self.target_net.w_value = data["target_w_value"].astype(np.float32)
         self.target_net.b_value = data["target_b_value"].astype(np.float32)
-        self.target_net.w_adv = data["target_w_adv"].astype(np.float32)
-        self.target_net.b_adv = data["target_b_adv"].astype(np.float32)
-        self.epsilon = float(data["epsilon"][0])
+        self.target_net.w_adv   = data["target_w_adv"].astype(np.float32)
+        self.target_net.b_adv   = data["target_b_adv"].astype(np.float32)
+        self.epsilon    = float(data["epsilon"][0])
         self.update_step = int(data["update_step"][0])

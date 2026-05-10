@@ -14,36 +14,54 @@ from traffic_rl.envs.factory import build_env
 
 @dataclass(slots=True)
 class TrainingSummary:
-    episodes: int
-    episode_rewards: list[float]
-    average_reward: float
+    """Aggregated results written to disk after a training run completes."""
+
+    episodes: int           # Total episodes trained.
+    episode_rewards: list[float]  # Per-episode cumulative reward (useful for plotting convergence).
+    average_reward: float   # Mean reward across all episodes — headline training metric.
 
 
 def run_training(cfg: AppConfig) -> TrainingSummary:
-    env = build_env(cfg)
+    """Run the full RL training loop and return a summary.
+
+    Each episode:
+      1. Reset the environment to its initial state.
+      2. Step through the episode: agent acts → environment steps → agent learns.
+      3. Record the total reward for the episode.
+    After all episodes, save the agent checkpoint and write a JSON summary.
+    """
+    env   = build_env(cfg)
     agent = build_agent(cfg, env.action_size)
 
     rewards: list[float] = []
     progress = tqdm(range(cfg.training.episodes), desc="Training episodes", unit="ep")
+
     for episode_idx in progress:
-        obs = env.reset()
-        state = obs.as_vector()
+        obs   = env.reset()
+        state = obs.as_vector()      # Flatten observation into a vector the network can consume.
         episode_reward = 0.0
 
         for _step in range(cfg.training.max_steps):
+            # Agent chooses a phase (train=True enables exploration).
             action = agent.act(state, train=True)
+
+            # Environment applies the phase and returns the next state + reward.
             next_obs, reward, done, _ = env.step(action)
             next_state = next_obs.as_vector()
 
+            # Agent stores the experience and updates its weights (if conditions are met).
             agent.observe(state, action, reward, next_state, done)
+
             episode_reward += reward
             state = next_state
 
             if done:
-                break
+                break  # Episode time horizon reached — start next episode.
 
         rewards.append(float(episode_reward))
         running_avg = float(np.mean(rewards))
+
+        # Update the progress bar with this episode's stats.
         progress.set_postfix(
             reward=f"{episode_reward:.1f}",
             avg=f"{running_avg:.1f}",
@@ -66,15 +84,18 @@ def run_training(cfg: AppConfig) -> TrainingSummary:
 
 
 def _write_summary(cfg: AppConfig, summary: TrainingSummary) -> None:
-    output_dir = Path(cfg.output_dir)
+    """Serialise the training summary to JSON in the configured output directory."""
+    output_dir  = Path(cfg.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     output_file = output_dir / "training_summary.json"
     output_file.write_text(json.dumps(asdict(summary), indent=2), encoding="utf-8")
 
 
 def _save_agent_checkpoint(cfg: AppConfig, agent: object) -> None:
+    """Save the trained agent's weights to a backend-specific .npz file."""
     output_dir = Path(cfg.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    # Include the backend name in the filename so cityflow and mock checkpoints don't collide.
     checkpoint_path = output_dir / f"agent_checkpoint_{cfg.env.backend.lower()}.npz"
 
     if hasattr(agent, "save"):
@@ -82,8 +103,13 @@ def _save_agent_checkpoint(cfg: AppConfig, agent: object) -> None:
 
 
 def _reward_bar(reward: float, width: int = 16) -> str:
-    # Less-negative reward means better traffic control.
+    """Render a simple ASCII bar chart showing how good this episode's reward was.
+
+    The reward scale is clamped to [-12000, 0]. A fully filled bar means
+    reward ≈ 0 (no queues); an empty bar means reward ≈ -12000 (severe congestion).
+    """
     clamped = float(np.clip(reward, -12000.0, 0.0))
+    # Map [-12000, 0] → [0, width].
     filled = int(round((clamped + 12000.0) / 12000.0 * width))
     filled = max(0, min(width, filled))
     return f"[{'#' * filled}{'-' * (width - filled)}]"
