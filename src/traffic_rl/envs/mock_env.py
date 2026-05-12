@@ -16,8 +16,9 @@ class MockTrafficEnv(TrafficEnv):
     Used for unit tests and rapid iteration without needing CityFlow installed.
     """
 
-    def __init__(self, cfg: EnvironmentConfig, seed: int = 7) -> None:
+    def __init__(self, cfg: EnvironmentConfig, seed: int = 7, reward_type: str = "queue_length") -> None:
         self.cfg = cfg
+        self.reward_type = reward_type
         # Seeded random generator — using a fixed seed makes runs reproducible.
         self.rng = np.random.default_rng(seed)
         self._step = 0          # Counts decision steps within the current episode.
@@ -95,7 +96,7 @@ class MockTrafficEnv(TrafficEnv):
 
         obs = self._build_observation()
         self._last_obs = obs
-        reward = reward_from_type(self.cfg.reward.type, obs, prev_observation=prev_obs)
+        reward = reward_from_type(self.reward_type, obs, prev_observation=prev_obs)
 
         # Episode ends when we reach the configured time horizon.
         done = self._step >= self.cfg.episode_horizon_seconds // self.cfg.decision_interval

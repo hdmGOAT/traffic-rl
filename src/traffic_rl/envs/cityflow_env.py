@@ -27,7 +27,7 @@ class CityFlowTrafficEnv(TrafficEnv):
     intersection by selecting which traffic-light phase to activate each step.
     """
 
-    def __init__(self, cfg: EnvironmentConfig, seed: int = 7) -> None:
+    def __init__(self, cfg: EnvironmentConfig, seed: int = 7, reward_type: str = "queue_length") -> None:
         if not cfg.cityflow_config_path:
             raise ValueError("cityflow_config_path is required when backend is 'cityflow'.")
 
@@ -52,6 +52,7 @@ class CityFlowTrafficEnv(TrafficEnv):
             ) from error
 
         self.cfg = cfg
+        self.reward_type = reward_type
         self.seed_value = seed
         self.cityflow = cityflow
         # Spin up the CityFlow engine with the provided JSON config.
@@ -174,7 +175,7 @@ class CityFlowTrafficEnv(TrafficEnv):
 
         obs = self._build_observation()
         self._last_obs = obs
-        reward = reward_from_type(self.cfg.reward.type, obs, prev_observation=prev_obs)
+        reward = reward_from_type(self.reward_type, obs, prev_observation=prev_obs)
 
         # Episode ends when we've simulated the full configured horizon (e.g. 3600 s).
         done = self._step >= self.cfg.episode_horizon_seconds // self.cfg.decision_interval

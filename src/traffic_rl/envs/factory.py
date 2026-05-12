@@ -20,9 +20,9 @@ def build_env(cfg: AppConfig) -> TrafficEnv:
     backend = cfg.env.backend.lower()
 
     if backend == "mock":
-        return MockTrafficEnv(cfg.env, seed=cfg.seed)
+        return MockTrafficEnv(cfg.env, seed=cfg.seed, reward_type=cfg.reward.type)
 
     if backend == "cityflow":
-        return CityFlowTrafficEnv(cfg.env, seed=cfg.seed)
+        return CityFlowTrafficEnv(cfg.env, seed=cfg.seed, reward_type=cfg.reward.type)
 
     raise ValueError(f"Unsupported backend '{cfg.env.backend}'.")
