@@ -8,7 +8,7 @@ import numpy as np
 
 from traffic_rl.config import EnvironmentConfig
 from traffic_rl.envs.base import TrafficEnv
-from traffic_rl.reward import mixed_reward
+from traffic_rl.reward import reward_from_type
 from traffic_rl.types import Observation
 
 
@@ -174,7 +174,7 @@ class CityFlowTrafficEnv(TrafficEnv):
 
         obs = self._build_observation()
         self._last_obs = obs
-        reward = mixed_reward(obs, prev_observation=prev_obs)
+        reward = reward_from_type(self.cfg.reward.type, obs, prev_observation=prev_obs)
 
         # Episode ends when we've simulated the full configured horizon (e.g. 3600 s).
         done = self._step >= self.cfg.episode_horizon_seconds // self.cfg.decision_interval

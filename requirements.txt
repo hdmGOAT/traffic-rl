@@ -4,3 +4,4 @@ pandas>=1.5
 matplotlib>=3.5
 scikit-learn>=1.0
 scipy>=1.9
+seaborn>=0.12

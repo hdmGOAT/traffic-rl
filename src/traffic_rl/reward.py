@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from .types import Observation
 import math
+
+from .types import Observation
 
 
 def queue_length_reward(observation: Observation) -> float:
@@ -64,3 +65,17 @@ def mixed_reward(
         - queue_balancing_weight * queue_imbalance
         - duration_penalty
     )
+
+
+def reward_from_type(
+    reward_type: str,
+    observation: Observation,
+    prev_observation: Observation | None = None,
+) -> float:
+    """Resolve the active training reward from a configured reward type."""
+    reward_type_normalized = reward_type.strip().lower()
+    if reward_type_normalized == "queue_length":
+        return queue_length_reward(observation)
+    if reward_type_normalized == "mixed":
+        return mixed_reward(observation, prev_observation=prev_observation)
+    raise ValueError(f"Unsupported reward type '{reward_type}'.")
