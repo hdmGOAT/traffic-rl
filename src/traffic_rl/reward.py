@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .types import Observation
+import math
 
 
 def queue_length_reward(observation: Observation) -> float:
@@ -21,41 +22,45 @@ def queue_length_reward(observation: Observation) -> float:
 
 def mixed_reward(
     observation: Observation,
+    prev_observation: Observation | None = None,
     queue_weight: float = 0.3,
-    wait_weight: float = 0.4,
-    starvation_weight: float = 0.3,
+    queue_balancing_weight: float = 1.5,
+    duration_penalty_weight: float = 0.2,
 ) -> float:
-    """Multi-factor reward combining queue length, average wait time, and starvation.
+    """Multi-factor reward focusing on balanced queue reduction.
+
+    Key insight: penalize IMBALANCE between lanes (max-min) more than total queue.
+    This forces the agent to serve all directions fairly, preventing starvation.
 
     Args:
         observation: Current traffic observation.
-        queue_weight: Weight for the queue-length term.
-        wait_weight: Weight for the average-wait-time term.
-        starvation_weight: Weight for the max-wait term that penalizes a lane
-            being starved while another phase stays green.
+        prev_observation: Previous traffic observation for delta calculation.
+        queue_weight: Weight for total queue reduction (secondary).
+        queue_balancing_weight: Weight for preventing queue imbalance between lanes.
+        duration_penalty_weight: Penalty weight for keeping the same phase too long.
 
-    Returns a single scalar reward where lower (more negative) is worse traffic.
-
-    Rationale: queue_length_reward penalizes accumulation, but wait_times captures
-    how long vehicles have been stuck. The max-wait term adds an explicit starvation
-    signal so one lane cannot be neglected just because the total queue looks fine.
-
-    Example:
-        - 5 vehicles just arrived (low wait): mostly queue penalty, little wait penalty
-        - 5 vehicles stuck for 20s (high wait): queue penalty + average wait penalty +
-          strong starvation penalty
+    Returns a scalar reward where lower (more negative) is worse traffic.
     """
-    queue_penalty = -float(observation.queue_lengths.sum())
-    # Average wait time across all lanes; penalize proportionally to average wait.
-    avg_wait = float(observation.wait_times.mean())
-    wait_penalty = -avg_wait  # Negative: penalize long waits
-    max_wait = float(observation.wait_times.max()) if observation.wait_times.size else 0.0
-    starvation_penalty = -max_wait  # Negative: penalize a single lane being starved
+    # 1. Delta Queue (Improvement in total congestion)
+    def _total_queue(obs: Observation) -> float:
+        return float(obs.queue_lengths.sum())
 
-    # Normalize weights.
-    total_weight = queue_weight + wait_weight + starvation_weight
+    if prev_observation is not None:
+        delta_queue = _total_queue(prev_observation) - _total_queue(observation)
+    else:
+        delta_queue = 0.0
+
+    # 2. QUEUE IMBALANCE (max - min): The core anti-starvation metric
+    # Penalizes when one lane is neglected while another is served
+    # Example: if UP-DOWN has 15 vehicles and LEFT-RIGHT has 1, penalty = 14
+    # This forces balanced serving across all directions
+    queue_imbalance = float(observation.queue_lengths.max() - observation.queue_lengths.min())
+
+    # 3. Phase-Duration Penalty (Safety Rail to prevent stuck phases)
+    duration_penalty = duration_penalty_weight * math.log1p(observation.elapsed_green)
+
     return (
-        queue_weight * queue_penalty
-        + wait_weight * wait_penalty
-        + starvation_weight * starvation_penalty
-    ) / total_weight
+        queue_weight * delta_queue
+        - queue_balancing_weight * queue_imbalance
+        - duration_penalty
+    )

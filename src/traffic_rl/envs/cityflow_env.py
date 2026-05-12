@@ -83,7 +83,9 @@ class CityFlowTrafficEnv(TrafficEnv):
         self._elapsed_green = 0
         self._step = 0
         self._vehicle_enter_times = {}  # Clear vehicle tracking for new episode
-        return self._build_observation()
+        obs = self._build_observation()
+        self._last_obs = obs
+        return obs
 
     def set_replay_file(self, replay_file: str) -> None:
         """Tell CityFlow where to write its vehicle animation replay log."""
@@ -155,6 +157,7 @@ class CityFlowTrafficEnv(TrafficEnv):
         simulation seconds before the next observation is taken.
         """
         self._step += 1
+        prev_obs = getattr(self, "_last_obs", None)
 
         # Only apply a phase change if the request is different from the current phase
         # AND the current phase has been green for the minimum required time.
@@ -170,7 +173,8 @@ class CityFlowTrafficEnv(TrafficEnv):
             self.handles.engine.next_step()
 
         obs = self._build_observation()
-        reward = mixed_reward(obs)
+        self._last_obs = obs
+        reward = mixed_reward(obs, prev_observation=prev_obs)
 
         # Episode ends when we've simulated the full configured horizon (e.g. 3600 s).
         done = self._step >= self.cfg.episode_horizon_seconds // self.cfg.decision_interval

@@ -16,17 +16,19 @@ reward:
   type: queue_length
 
 training:
-  episodes: 3
-  max_steps: 40
+  episodes: 100
+  max_steps: 100
   agent_type: dqn
   gamma: 0.95
   learning_rate: 0.001
   epsilon_start: 1.0
-  epsilon_end: 0.1
-  epsilon_decay: 0.99
+  epsilon_end: 0.15
+  epsilon_decay: 0.9975
   hidden_dim: 64
   batch_size: 16
-  replay_capacity: 2000
-  learning_starts: 20
+  replay_capacity: 5000
+  learning_starts: 50
+  target_update_interval: 100
+  train_frequency: 1
   target_update_interval: 20
   train_frequency: 1

@@ -42,7 +42,9 @@ class MockTrafficEnv(TrafficEnv):
         self._elapsed_green = 0
         # Randomised starting queues make the agent learn to handle varied conditions.
         self._queues = self.rng.integers(0, 3, size=self.cfg.num_lanes).astype(np.float32)
-        return self._build_observation()
+        obs = self._build_observation()
+        self._last_obs = obs
+        return obs
 
     def _build_observation(self) -> Observation:
         """Package the current internal state into an Observation the agent can read."""
@@ -65,6 +67,7 @@ class MockTrafficEnv(TrafficEnv):
         Vehicles arrive randomly and depart only from lanes served by the current phase.
         """
         self._step += 1
+        prev_obs = getattr(self, "_last_obs", None)
 
         # Only switch phase if the agent requests a different one AND the current
         # phase has been green long enough (minimum green time constraint).
@@ -91,7 +94,8 @@ class MockTrafficEnv(TrafficEnv):
         self._queues = np.maximum(0.0, self._queues + arrivals - departures)
 
         obs = self._build_observation()
-        reward = mixed_reward(obs)
+        self._last_obs = obs
+        reward = mixed_reward(obs, prev_observation=prev_obs)
 
         # Episode ends when we reach the configured time horizon.
         done = self._step >= self.cfg.episode_horizon_seconds // self.cfg.decision_interval
