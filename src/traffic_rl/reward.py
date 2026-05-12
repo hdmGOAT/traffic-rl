@@ -24,7 +24,7 @@ def mixed_reward(
     observation: Observation,
     prev_observation: Observation | None = None,
     queue_weight: float = 0.3,
-    queue_balancing_weight: float = 1.5,
+    queue_balancing_weight: float = 4.0,
     duration_penalty_weight: float = 0.2,
 ) -> float:
     """Multi-factor reward focusing on balanced queue reduction.
@@ -51,9 +51,9 @@ def mixed_reward(
         delta_queue = 0.0
 
     # 2. QUEUE IMBALANCE (max - min): The core anti-starvation metric
-    # Penalizes when one lane is neglected while another is served
-    # Example: if UP-DOWN has 15 vehicles and LEFT-RIGHT has 1, penalty = 14
-    # This forces balanced serving across all directions
+    # Penalizes when one lane is neglected while another is served.
+    # Example: if UP-DOWN has 15 vehicles and LEFT-RIGHT has 1, penalty = 14.
+    # The stronger weight makes unfair phase allocation much less attractive.
     queue_imbalance = float(observation.queue_lengths.max() - observation.queue_lengths.min())
 
     # 3. Phase-Duration Penalty (Safety Rail to prevent stuck phases)
