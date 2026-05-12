@@ -4,7 +4,7 @@ import numpy as np
 
 from traffic_rl.config import EnvironmentConfig
 from traffic_rl.envs.base import TrafficEnv
-from traffic_rl.reward import queue_length_reward
+from traffic_rl.reward import mixed_reward
 from traffic_rl.types import Observation
 
 
@@ -47,9 +47,12 @@ class MockTrafficEnv(TrafficEnv):
     def _build_observation(self) -> Observation:
         """Package the current internal state into an Observation the agent can read."""
         waiting = self._queues.copy()
+        # Mock environment: use queue length as dummy wait time (no real vehicle tracking).
+        wait_times = self._queues.copy() * 0.5  # Scale by 0.5 seconds per vehicle as placeholder
         return Observation(
             queue_lengths=self._queues.copy(),
             waiting_vehicles=waiting,
+            wait_times=wait_times,
             current_phase=self._phase,
             elapsed_green=self._elapsed_green,
         )
@@ -88,7 +91,7 @@ class MockTrafficEnv(TrafficEnv):
         self._queues = np.maximum(0.0, self._queues + arrivals - departures)
 
         obs = self._build_observation()
-        reward = queue_length_reward(obs)
+        reward = mixed_reward(obs)
 
         # Episode ends when we reach the configured time horizon.
         done = self._step >= self.cfg.episode_horizon_seconds // self.cfg.decision_interval

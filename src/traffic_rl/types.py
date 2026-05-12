@@ -17,6 +17,12 @@ class Observation:
     # (e.g. separate waiting-time weighting). Currently mirrors queue_lengths.
     waiting_vehicles: np.ndarray
 
+    # Average wait time (in seconds) for vehicles in each incoming lane.
+    # Tracks how long vehicles have been waiting since first observed in the lane.
+    # Complementary to queue_lengths: high queue with low wait means recent arrivals;
+    # low queue with high wait means long-stuck vehicles.
+    wait_times: np.ndarray
+
     # Which traffic-light phase is currently active (0-indexed integer).
     # The agent needs this so it knows its own current state, not just the traffic state.
     current_phase: int
@@ -29,13 +35,14 @@ class Observation:
     def as_vector(self) -> np.ndarray:
         """Flatten the observation into a 1-D float array suitable for neural network input.
 
-        Concatenates: [queue_lengths | waiting_vehicles | current_phase | elapsed_green]
+        Concatenates: [queue_lengths | waiting_vehicles | wait_times | current_phase | elapsed_green]
         The network never sees raw Python objects — only this flat numeric vector.
         """
         return np.concatenate(
             [
                 self.queue_lengths.astype(np.float32),
                 self.waiting_vehicles.astype(np.float32),
+                self.wait_times.astype(np.float32),
                 # Scalar values must be wrapped in an array before concatenation.
                 np.array([float(self.current_phase), float(self.elapsed_green)], dtype=np.float32),
             ]

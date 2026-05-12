@@ -8,7 +8,7 @@ import numpy as np
 
 from traffic_rl.config import EnvironmentConfig
 from traffic_rl.envs.base import TrafficEnv
-from traffic_rl.reward import queue_length_reward
+from traffic_rl.reward import mixed_reward
 from traffic_rl.types import Observation
 
 
@@ -62,6 +62,8 @@ class CityFlowTrafficEnv(TrafficEnv):
         self._phase = 0          # Currently active signal phase.
         self._elapsed_green = 0  # Steps the current phase has been active.
         self._step = 0           # Decision steps taken in the current episode.
+        # Track when each vehicle was first seen in the network (for wait time calculation).
+        self._vehicle_enter_times = {}  # Maps vehicle_id -> first_observation_time
 
     @property
     def action_size(self) -> int:
@@ -80,6 +82,7 @@ class CityFlowTrafficEnv(TrafficEnv):
         self._phase = 0
         self._elapsed_green = 0
         self._step = 0
+        self._vehicle_enter_times = {}  # Clear vehicle tracking for new episode
         return self._build_observation()
 
     def set_replay_file(self, replay_file: str) -> None:
@@ -89,29 +92,56 @@ class CityFlowTrafficEnv(TrafficEnv):
     def _build_observation(self) -> Observation:
         """Read the current intersection state from CityFlow and package it as an Observation.
 
-        CityFlow exposes per-lane waiting counts for the entire network.
+        CityFlow exposes per-lane waiting counts and vehicle lists for the entire network.
         We filter down to only the lanes on incoming roads so the observation
         vector size matches cfg.num_lanes regardless of network size.
+        We also track vehicle enter times to compute per-lane average wait times.
         """
+        current_time = self.handles.engine.get_current_time()
+        
         # Dict mapping lane_id → number of stopped vehicles in that lane right now.
         lane_waiting_count = self.handles.engine.get_lane_waiting_vehicle_count()
+        lane_vehicles = self.handles.engine.get_lane_vehicles()  # Dict: lane_id -> [vehicle_id, ...]
 
         # Keep only the lanes that feed into our controlled intersection.
         lane_ids = _select_incoming_lane_ids(lane_waiting_count, self._incoming_roads)
         queue = np.array([float(lane_waiting_count[lane]) for lane in lane_ids], dtype=np.float32)
+        
+        # Compute average wait time per lane.
+        wait_times_per_lane = []
+        for lane_id in lane_ids:
+            vehicle_ids = lane_vehicles.get(lane_id, [])
+            if vehicle_ids:
+                waits = []
+                for vid in vehicle_ids:
+                    # Track when we first see this vehicle; if new, record current time.
+                    if vid not in self._vehicle_enter_times:
+                        self._vehicle_enter_times[vid] = current_time
+                    wait = current_time - self._vehicle_enter_times[vid]
+                    waits.append(wait)
+                avg_wait = float(np.mean(waits))
+            else:
+                avg_wait = 0.0
+            wait_times_per_lane.append(avg_wait)
+        
+        wait_times = np.array(wait_times_per_lane, dtype=np.float32)
 
-        # Pad or trim to exactly cfg.num_lanes so the array is always a fixed size.
+        # Pad or trim to exactly cfg.num_lanes so the arrays are always a fixed size.
         if queue.size == 0:
             queue = np.zeros(self.cfg.num_lanes, dtype=np.float32)
+            wait_times = np.zeros(self.cfg.num_lanes, dtype=np.float32)
         if queue.size < self.cfg.num_lanes:
             pad = np.zeros(self.cfg.num_lanes - queue.size, dtype=np.float32)
             queue = np.concatenate([queue, pad])
+            wait_times = np.concatenate([wait_times, pad])
         elif queue.size > self.cfg.num_lanes:
             queue = queue[: self.cfg.num_lanes]
+            wait_times = wait_times[: self.cfg.num_lanes]
 
         return Observation(
             queue_lengths=queue,
             waiting_vehicles=queue.copy(),
+            wait_times=wait_times,
             current_phase=self._phase,
             elapsed_green=self._elapsed_green,
         )
@@ -140,7 +170,7 @@ class CityFlowTrafficEnv(TrafficEnv):
             self.handles.engine.next_step()
 
         obs = self._build_observation()
-        reward = queue_length_reward(obs)
+        reward = mixed_reward(obs)
 
         # Episode ends when we've simulated the full configured horizon (e.g. 3600 s).
         done = self._step >= self.cfg.episode_horizon_seconds // self.cfg.decision_interval
