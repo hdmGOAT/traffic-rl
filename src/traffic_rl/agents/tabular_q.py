@@ -40,6 +40,8 @@ class TabularQAgent(RLAgent):
             lambda: np.zeros(self.action_size, dtype=np.float32)
         )
         self.rng = np.random.default_rng(seed)
+        # runtime knob to disable learning (freeze policy after exploration ends)
+        self.learning_enabled = True
 
     def _to_key(self, state_vector: np.ndarray) -> tuple[int, ...]:
         """Discretise a continuous state vector into a hashable tuple.
@@ -90,11 +92,23 @@ class TabularQAgent(RLAgent):
             # Add discounted value of the best action in the next state.
             target += self.gamma * float(np.max(self.q_table[next_key]))
 
+        # If learning disabled, skip updates and decay.
+        if not getattr(self, "learning_enabled", True):
+            return
+
         # Move the Q-value a fraction (learning_rate) towards the target.
         self.q_table[state_key][action] = current_q + self.learning_rate * (target - current_q)
 
         # Decay exploration rate — never below epsilon_end.
         self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
+
+    def freeze(self) -> None:
+        """Disable further Q-table updates and epsilon decay."""
+        self.learning_enabled = False
+
+    def unfreeze(self) -> None:
+        """Re-enable learning updates."""
+        self.learning_enabled = True
 
     def save(self, path: str | Path) -> None:
         """Save the Q-table and current epsilon to a compressed .npz file."""

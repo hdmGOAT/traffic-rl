@@ -62,3 +62,19 @@ class RLAgent(ABC):
         must override this. Stateless agents (e.g. FixedTimeAgent) can no-op.
         """
         raise NotImplementedError(f"load() is not implemented for {self.__class__.__name__}")
+
+    # Optional runtime control hooks for stopping/starting learning.
+    def freeze(self) -> None:
+        """Request the agent stop updating its parameters going forward.
+
+        Default implementation is a no-op; learnable agents should override
+        to disable learning (e.g. skip observe/optimise and stop epsilon decay).
+        """
+        return
+
+    def unfreeze(self) -> None:
+        """Re-enable learning after a previous freeze.
+
+        Default is a no-op; learnable agents may override to re-enable updates.
+        """
+        return

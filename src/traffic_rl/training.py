@@ -36,27 +36,44 @@ def run_training(cfg: AppConfig) -> TrainingSummary:
     rewards: list[float] = []
     progress = tqdm(range(cfg.training.episodes), desc="Training episodes", unit="ep")
 
+    frozen = False
     for episode_idx in progress:
         obs   = env.reset()
         state = obs.as_vector()      # Flatten observation into a vector the network can consume.
         episode_reward = 0.0
 
         for _step in range(cfg.training.max_steps):
-            # Agent chooses a phase (train=True enables exploration).
-            action = agent.act(state, train=True)
+            # Agent chooses a phase. If we've frozen learning, act in evaluation mode.
+            action = agent.act(state, train=not frozen)
 
             # Environment applies the phase and returns the next state + reward.
             next_obs, reward, done, _ = env.step(action)
             next_state = next_obs.as_vector()
 
-            # Agent stores the experience and updates its weights (if conditions are met).
-            agent.observe(state, action, reward, next_state, done)
+            # Only observe (learn) while not frozen.
+            if not frozen:
+                agent.observe(state, action, reward, next_state, done)
 
             episode_reward += reward
             state = next_state
 
             if done:
                 break  # Episode time horizon reached — start next episode.
+
+        # After the episode, check whether we should freeze learning when epsilon bottoms out.
+        # This helps get stable evaluation metrics once exploration stops.
+        if (
+            getattr(cfg.training, "freeze_on_epsilon_end", False)
+            and not frozen
+            and hasattr(agent, "epsilon")
+            and getattr(agent, "epsilon") <= cfg.training.epsilon_end
+        ):
+            frozen = True
+            # Request agent to stop learning and persist the checkpoint.
+            if hasattr(agent, "freeze"):
+                agent.freeze()
+            _save_agent_checkpoint(cfg, agent)
+            print(f"[train] Freezing learning at episode {episode_idx + 1}; epsilon reached {agent.epsilon:.4f}")
 
         rewards.append(float(episode_reward))
         running_avg = float(np.mean(rewards))

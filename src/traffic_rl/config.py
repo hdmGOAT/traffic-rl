@@ -102,6 +102,10 @@ class TrainingConfig:
     # Train every N steps. 1 = train after every single step.
     train_frequency: int = 1
 
+    # If true, when epsilon reaches epsilon_end the trainer will freeze learning
+    # for the remainder of the run so later episodes act as evaluation.
+    freeze_on_epsilon_end: bool = True
+
 
 @dataclass(slots=True)
 class AppConfig:
@@ -174,6 +178,7 @@ def load_config(config_path: str | Path) -> AppConfig:
             learning_starts=int(_deep_get(train_raw, "learning_starts", 200)),
             target_update_interval=int(_deep_get(train_raw, "target_update_interval", 100)),
             train_frequency=int(_deep_get(train_raw, "train_frequency", 1)),
+            freeze_on_epsilon_end=bool(_deep_get(train_raw, "freeze_on_epsilon_end", True)),
         ),
     )
 

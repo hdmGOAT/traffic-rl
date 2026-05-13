@@ -134,6 +134,8 @@ class DQNAgent(RLAgent):
         self.online_net: _QNetwork | None = None
         self.target_net: _QNetwork | None = None
         self.update_step = 0  # Total observe() calls — drives training and target sync schedules.
+        # Allow runtime control to disable learning once frozen (e.g. after epsilon bottoms out).
+        self.learning_enabled = True
 
     def _ensure_initialized(self, state_vector: np.ndarray) -> None:
         """Lazily create both networks once we know the state vector size."""
@@ -172,6 +174,10 @@ class DQNAgent(RLAgent):
         done: bool,
     ) -> None:
         """Store the experience, trigger training if conditions are met, and decay epsilon."""
+        # If learning has been frozen, skip storing/updating to keep the policy stable.
+        if not getattr(self, "learning_enabled", True):
+            return
+
         self._ensure_initialized(state)
 
         # Pack the experience and push it into the replay buffer.
@@ -258,6 +264,14 @@ class DQNAgent(RLAgent):
         self.online_net.b1 -= self.learning_rate * grad_b1
         self.online_net.w2 -= self.learning_rate * grad_w2
         self.online_net.b2 -= self.learning_rate * grad_b2
+
+    def freeze(self) -> None:
+        """Disable further learning updates and epsilon decay."""
+        self.learning_enabled = False
+
+    def unfreeze(self) -> None:
+        """Re-enable learning updates."""
+        self.learning_enabled = True
 
     def save(self, path: str | Path) -> None:
         """Write all network weights and training state to a compressed .npz file."""
