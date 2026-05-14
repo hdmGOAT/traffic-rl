@@ -24,9 +24,9 @@ def queue_length_reward(observation: Observation) -> float:
 def mixed_reward(
     observation: Observation,
     prev_observation: Observation | None = None,
-    queue_weight: float = 0.3,
-    queue_balancing_weight: float = 4.0,
-    duration_penalty_weight: float = 0.2,
+    queue_weight: float = 0.5,
+    queue_balancing_weight: float = 0.8,
+    duration_penalty_weight: float = 0.1,
 ) -> float:
     """Multi-factor reward focusing on balanced queue reduction.
 
